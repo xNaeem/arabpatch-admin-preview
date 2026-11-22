@@ -66,7 +66,7 @@ export default defineConfig({
     Set-Content -LiteralPath $tempConfig -Value $configText -Encoding utf8
     Write-Host "Building the exact original Admin front-end..."
     try {
-        Run "node" @("node_modules/astro/bin/astro.mjs", "build", "--root", $previewRoot, "--config", "$previewRoot/astro.config.github-pages.mjs")
+        Run "node" @("node_modules/astro/bin/astro.mjs", "build", "--root", $previewRoot, "--config", $tempConfig)
     } finally {
         Remove-Item -LiteralPath $tempConfig -Force -ErrorAction SilentlyContinue
     }
