@@ -12,7 +12,7 @@ $source = Join-Path $desktop "ArabPatch-Design-Source"
 $sourceUrl = "https://github.com/xNaeem/alw-website.git"
 $previewRoot = ".publication/admin-rebuild-preview-20261118"
 $buildPath = Join-Path $source "$previewRoot/dist"
-$tempConfig = Join-Path $source "$previewRoot/astro.config.github-pages.mjs"
+$originalConfig = Join-Path $source "$previewRoot/astro.config.mjs"
 
 function Run([string]$Exe, [string[]]$Params) {
     & $Exe @Params
@@ -51,24 +51,36 @@ try {
     if (-not (Test-Path "node_modules/astro/bin/astro.mjs")) {
         Run "npm.cmd" @("ci")
     }
-    # Build with the ORIGINAL Astro app and a disposable GitHub Pages base config.
-    # No original tracked files or production services are changed.
-    $configText = @'
-import original from './astro.config.mjs';
-import { defineConfig } from 'astro/config';
-export default defineConfig({
-  ...original,
-  site: 'https://xnaeem.github.io',
-  base: '/arabpatch-admin-preview/',
-  output: 'static'
-});
-'@
-    Set-Content -LiteralPath $tempConfig -Value $configText -Encoding utf8
-    Write-Host "Building the exact original Admin front-end..."
+    # Temporarily adjust the ORIGINAL config in memory and restore its exact bytes.
+    # Avoid '--config <absolute Unicode Windows path>', which Astro failed to resolve.
+    $originalBytes = [IO.File]::ReadAllBytes($originalConfig)
     try {
-        Run "node" @("node_modules/astro/bin/astro.mjs", "build", "--root", $previewRoot, "--config", $tempConfig)
+        $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+        if (-not $originalText.Contains("export default defineConfig({")) {
+            throw "Unexpected Astro config layout. The original file was not modified."
+        }
+        if (-not $originalText.Contains("site: 'http://127.0.0.1:5010'")) {
+            throw "Unexpected local site setting. The original file was not modified."
+        }
+        $pagesConfig = $originalText.Replace(
+            "site: 'http://127.0.0.1:5010'",
+            "site: 'https://xnaeem.github.io',"
+        )
+        # Replace above adds a comma; the original site line already had one.
+        $pagesConfig = $pagesConfig.Replace(
+            "site: 'https://xnaeem.github.io',,",
+            "site: 'https://xnaeem.github.io',"
+        )
+        $pagesConfig = $pagesConfig.Replace(
+            "export default defineConfig({",
+            "export default defineConfig({`n  base: '/arabpatch-admin-preview/',"
+        )
+        [IO.File]::WriteAllText($originalConfig, $pagesConfig, [Text.UTF8Encoding]::new($false))
+        Write-Host "Building the original Astro Admin with GitHub Pages base..."
+        Run "node" @("node_modules/astro/bin/astro.mjs", "build", "--root", $previewRoot)
     } finally {
-        Remove-Item -LiteralPath $tempConfig -Force -ErrorAction SilentlyContinue
+        # The design source must remain unmodified even after a build failure.
+        [IO.File]::WriteAllBytes($originalConfig, $originalBytes)
     }
 } finally { Pop-Location }
 
